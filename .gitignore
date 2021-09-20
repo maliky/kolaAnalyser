@@ -1,0 +1,17 @@
+keys*
+*~
+build/
+bin/*
+lib/*
+dist/*
+*egg-info/
+__pycache__
+.python-version
+tmp*
+*cache
+*csv
+*.ipynb
+.dir-locals.el
+README.org
+setup.cfg
+Kraken
