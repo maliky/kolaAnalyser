@@ -5,20 +5,20 @@ Il transforme les données holc en chaines de charactères. Il y applique
 des techniques de TAL pour découvrir de motifs (mot) plus ou moins
 récurents et calculer des probabilités (fréquences) conditionnelles.
 
-Notons :math:`h_n` et :math:`l_n` le maximun et minimun d'une pipe au
-temps :math:`n` time\ :sub:`unit`. Alors selon le rapport avec les
-:math:`l_{n-1}` et :math:`h_{n-1}` nous définissons les types de pipes
+Notons `h_n` et `l_n` le maximun et minimun d'une pipe au
+temps `n` time\ :sub:`unit`. Alors selon le rapport avec les
+`l_{n-1}` et `h_{n-1}` nous définissons les types de pipes
 suivantes:
 
--  :math:`h_n` > :math:`h_{n-1}` ET :math:`l_n` >= :math:`l_{n-1}` ->
+-  `h_n` > `h_{n-1}` ET `l_n` >= `l_{n-1}` ->
    bull (l), augmentation des prix ;
--  :math:`h_n` <= :math:`h_{n-1}` ET :math:`l_n` < :math:`l_{n-1}` ->
+-  `h_n` <= `h_{n-1}` ET `l_n` < `l_{n-1}` ->
    bear (r), baisse des prix ;
--  :math:`h_n` < :math:`h_{n-1}` ET :math:`l_n` > :math:`l_{n-1}` ->
+-  `h_n` < `h_{n-1}` ET `l_n` > `l_{n-1}` ->
    sheep (p), contraction du prix ;
--  :math:`h_n` > :math:`h_{n-1}` ET :math:`l_n` < :math:`l_{n-1}` ->
+-  `h_n` > `h_{n-1}` ET `l_n` < `l_{n-1}` ->
    dragon (n), expansion des prix ;
--  :math:`h_n` == :math:`h_{n-1}` ET :math:`l_n` == :math:`l_{n-1}` ->
+-  `h_n` == `h_{n-1}` ET `l_n` == `l_{n-1}` ->
    dragon (n), contraction des prix ;
 
 la \`time\ :sub:`unit`\ \` est l'unité d'aggrégation des données et de
