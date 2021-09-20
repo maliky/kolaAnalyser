@@ -105,7 +105,9 @@ def create_indexes_en_creneaux(data: DataFrame, ts_pas, freq_décalage="60s") ->
     """
     start_ts, end_ts = ts_extent(data)
     start_end_ts = start_ts + Timedelta(ts_pas) - Timedelta("60s")
-    start_ts_range = date_range(start=start_ts, end=start_end_ts, freq=freq_décalage)
+    start_ts_range = date_range(
+        start=start_ts, end=start_end_ts, freq=Timedelta(freq_décalage)
+    )
 
     _indexes = {}
     logger.info(
@@ -114,8 +116,8 @@ def create_indexes_en_creneaux(data: DataFrame, ts_pas, freq_décalage="60s") ->
     )
 
     for i, start_ts in enumerate(start_ts_range):
-        print(f"{i+1:9d}/{len(start_ts_range):9d} :\t{start_ts}", end="\r")
-        _index = date_range(start=start_ts, end=end_ts, freq=ts_pas)
+        print(f"{i+1:3d}/{len(start_ts_range):3d} :\t{start_ts}", end="\r")
+        _index = date_range(start=start_ts, end=end_ts, freq=Timedelta(ts_pas))
         _indexes[start_ts] = _index
 
     indexes = Series(_indexes)
@@ -141,6 +143,7 @@ def make_sequence_in_beasts(data, sequences_indexes_: Series, ts_pas: str) -> Se
     et le second le nom des séries en créneaux
     ts_pas c'est le pas à l'intérieur de chaque série.
     """
+
     _td = get_td_from_tsindex(sequences_indexes_[0])
     logger.info(
         f"Creating {len(sequences_indexes_)} '{ts_pas} beasts' sequences "
@@ -349,7 +352,7 @@ def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> S
         reste_du_mot = "".join(mot[1:])
         _motif = f"{première_lettre}(?={reste_du_mot})"
 
-        print(f"Search motif of len {LEN_MOTIF}: {i:9d}/{NB_MOTIFS:9d}", end="\r")
+        print(f"Search motif with len {LEN_MOTIF:5}: {i:5d}/{NB_MOTIFS:5d}", end="\r")
 
         D[tuple(mot)] = list(
             map(_trsf_botte_pos_in_ts, find_pattern(_motif, _procession))
@@ -525,10 +528,10 @@ def main(folder, action="load", ts_shift=None, pipe_td="1d", max_len_motif=7):
     MAX_LEN_MOTIFS = max_len_motif
     MOTIFS = create_dico_de_motifs(max_motif_len=MAX_LEN_MOTIFS, symbols_=set(BEASTS))
 
-    for len_mot in range(1, MAX_LEN_MOTIFS):
-        logger.info(f"Searching motif of len\t {len_mot+1}/{MAX_LEN_MOTIFS}")
+    for len_mot in range(2, MAX_LEN_MOTIFS):
+        logger.info(f"Searching motif of len\t {len_mot}/{MAX_LEN_MOTIFS}")
         motifs_matches = motifs_matches_inall(
-            processions_=beast_processions, mots_=MOTIFS[len_mot + 1], with_detail=True
+            processions_=beast_processions, mots_=MOTIFS[len_mot], with_detail=True
         )
         logger.info(f"Sorting the words {len_mot} by conditional frequency.")
         sorted_data = ordonne_motifs(motifs_matches, MOTIFS)
