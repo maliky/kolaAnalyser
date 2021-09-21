@@ -261,7 +261,7 @@ def make_motifs(current_motifs, current_n, symbols, authorize_explosion=False):
     return make_motifs(new_motifs, current_n - 1, symbols, authorize_explosion)
 
 
-def create_dico_de_motifs(max_motif_len=9, symbols_=BEASTS):
+def create_dico_de_motifs(max_motif_len=9, symbols_=BEASTS, authorise_explosion=False):
     """
     Créer un dictionnaire de motif de différentes longueurs.
     """
@@ -272,7 +272,7 @@ def create_dico_de_motifs(max_motif_len=9, symbols_=BEASTS):
     )
     for i in range(max_motif_len):
         print(f"motif of length {i+1}", end="\r")
-        _motifs[i + 1] = make_motifs(_motifs[i], 1, short_symbols)
+        _motifs[i + 1] = make_motifs(_motifs[i], 1, short_symbols, authorise_explosion)
     return _motifs
 
 
@@ -481,7 +481,14 @@ def load_data(folder: Path, fname: str, action: str, action_baggage=None):
     return (vedf, fedf)
 
 
-def main(folder, action="load", ts_shift=None, pipe_td="1d", max_len_motif=7):
+def main(
+    folder,
+    action="load",
+    ts_shift=None,
+    pipe_td="1d",
+    max_len_motif=7,
+    authorise_explosion=False,
+):
     """
     Executing main élement of the programme
     loading the data,
@@ -526,7 +533,11 @@ def main(folder, action="load", ts_shift=None, pipe_td="1d", max_len_motif=7):
     # compter ~ 6 lettres.  Changer la taille du "BY" pour couvrir
     # de plus grandes périodes de temps
     MAX_LEN_MOTIFS = max_len_motif
-    MOTIFS = create_dico_de_motifs(max_motif_len=MAX_LEN_MOTIFS, symbols_=set(BEASTS))
+    MOTIFS = create_dico_de_motifs(
+        max_motif_len=MAX_LEN_MOTIFS,
+        symbols_=set(BEASTS),
+        authorise_explosion=authorise_explosion,
+    )
 
     for len_mot in range(2, MAX_LEN_MOTIFS):
         logger.info(f"Searching motif of len\t {len_mot}/{MAX_LEN_MOTIFS}")
@@ -607,6 +618,11 @@ def parse_args():
         type=int,
         default=7,
     )
+    parser.add_argument(
+        "--authorise_explosion",
+        action="store_true",
+        help="Should we authorise motifs of any lenght ?",
+    )
 
     return parser.parse_args()
 
@@ -623,6 +639,7 @@ def main_prg():
         ts_shift=args.ts_shift,
         pipe_td=args.pipe_td,
         max_len_motif=args.motif_max_len,
+        authorise_explosion=args.authorise_explosion,
     )
 
 
