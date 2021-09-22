@@ -6,6 +6,9 @@ ex. 7, 11, 13, 17, 19, 23, 31, 37, 41, 47, 49, 53, 59  minutes. (nombre entiers)
 """
 # need to parallesise the code et do it in Haskell
 import logging
+from threading import Thread
+from queue import Queue
+
 import argparse
 from pandas import (
     concat,
@@ -300,7 +303,17 @@ def sous_motif_se_répète(motif):
     return False
 
 
-def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> Series:
+def motifs_matchs_ioneT(
+    name, procession_, motifs_: Sequence, with_detail=False, Q=None
+):
+    logger.info(f"{name} started.")
+    series = motifs_matches_inone(procession_, motifs_, with_detail)
+    Q.put(series)
+    logger.info(f"{name} Returned.")
+    return None
+
+
+def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> DataFrame:
     """
     Cherche les motifs de motifs_ dans la procession.
     motifs_ est une Sequence de sous-chaines de beasts de même taille.
@@ -342,6 +355,8 @@ def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> S
         """
         return START_TS + botte_position * PAS_TD
 
+    def pad(num):
+        return "\t\t"  * int(num)
     # on récupère la chaine de caractère dans l'objet
     _procession = procession_.values[0]
     LEN_SEQ = len(_procession)
@@ -354,7 +369,8 @@ def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> S
         reste_du_mot = "".join(mot[1:])
         _motif = f"{première_lettre}(?={reste_du_mot})"
 
-        print(f"Search motif with len {LEN_MOTIF:6d}: {i:6d}/{NB_MOTIFS:6d}", end="\r")
+        # print(f"{pad(SEQ_NUM[1:])}\t{i:6d}/{NB_MOTIFS:6d}", end="\r")
+        print(f"{{i:6d}/{NB_MOTIFS:6d}", end="\r")
 
         D[tuple(mot)] = list(
             map(_trsf_botte_pos_in_ts, find_pattern(_motif, _procession))
@@ -405,6 +421,9 @@ def get_matches_stat(s_: Series) -> DataFrame:
     return df
 
 
+Q = Queue()
+
+
 def motifs_matches_inall(processions_, mots_: Sequence, with_detail=False) -> DataFrame:
     """
     Pour chacune des processions, trouve la date de départ d'un de mots_
@@ -424,13 +443,32 @@ def motifs_matches_inall(processions_, mots_: Sequence, with_detail=False) -> Da
     # IDX_NAME = processions_.index.name
 
     # construit la dataframe avec toute les positions
+    print(f"Searching for words of len {LEN_MOT}")
     _df = None
     for i in range(len(processions_)):
-        print(f"concatenate procession {i+1:9d}/{len(processions_):9d}", end="\n")
-        _stat = motifs_matches_inone(
-            processions_.iloc[i], motifs_=mots_, with_detail=False
+        # print(f"concatenate procession {i+1:9d}/{len(processions_):9d}", end="\n")
+        # _stat = motifs_matches_inone(
+        #     processions_.iloc[i], motifs_=mots_, with_detail=False
+        # )
+        name = f"Tmatch{i}"
+        t = Thread(
+            target=motifs_matchs_ioneT,
+            name=name,
+            kwargs={
+                "name": name,
+                "procession_": processions_.iloc[i],
+                "motifs_": mots_,
+                "with_detail": False,
+                "Q": Q,
+            },
         )
+        t.start()
+        
+    for i in range(len(processions_)):
+        _stat = Q.get()
+        # logger.info(f"Got _stat.index.name={_stat.index.name}")
         _df = _stat if _df is None else concat([_df, _stat])
+
     _df = _df.sort_index()  # to avoird lexsort depth performance warning
 
     #### regroupe toute les positions des séquences en une seule
