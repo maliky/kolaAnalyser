@@ -370,7 +370,7 @@ def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> D
         _motif = f"{première_lettre}(?={reste_du_mot})"
 
         # print(f"{pad(SEQ_NUM[1:])}\t{i:6d}/{NB_MOTIFS:6d}", end="\r")
-        print(f"{{i:6d}/{NB_MOTIFS:6d}", end="\r")
+        print(f"{i:6d}/{NB_MOTIFS:6d}", end="\r")
 
         D[tuple(mot)] = list(
             map(_trsf_botte_pos_in_ts, find_pattern(_motif, _procession))
