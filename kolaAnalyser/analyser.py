@@ -45,13 +45,15 @@ logger = logging.getLogger("INFO")
 
 
 def data_f(df: DataFrame, frac: float, cols: Sequence = LHc):
-    """renvois une fra des colonnes cols de la df"""
+    """Select the cols columns in the df DataFrame and return them."""
     return sample(df, cols, frac=frac)
 
 
 def sdata_f(df: DataFrame, frac: float, by_, cols: Sequence = LHc):
-    """Renvois un df sampled at x%
-    and extened with rolling essential on by_ timeframe"""
+    """
+    Renvois un df sampled at x%
+    and extened with rolling essential on by_ timeframe
+    """
     return add_rolling_essential(data_f(df, frac, cols), by_=by_)
 
 
@@ -352,7 +354,7 @@ def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> S
         reste_du_mot = "".join(mot[1:])
         _motif = f"{première_lettre}(?={reste_du_mot})"
 
-        print(f"Search motif with len {LEN_MOTIF:5}: {i:5d}/{NB_MOTIFS:5d}", end="\r")
+        print(f"Search motif with len {LEN_MOTIF:6d}: {i:6d}/{NB_MOTIFS:6d}", end="\r")
 
         D[tuple(mot)] = list(
             map(_trsf_botte_pos_in_ts, find_pattern(_motif, _procession))
@@ -487,6 +489,7 @@ def main(
     ts_shift=None,
     pipe_td="1d",
     max_len_motif=7,
+    specific_len_motif=0,
     authorise_explosion=False,
 ):
     """
@@ -494,6 +497,12 @@ def main(
     loading the data,
     sequencing it, extraction of beasts and analysis of motifs
     """
+    assert max_len_motif > 2, f"max_len_motif={max_len_motif}"
+    assert (
+        max_len_motif >= specific_len_motif
+    ), f"max_len_motif={max_len_motif}, specific_len_motif={specific_len_motif}"
+    assert action in ["load", "save", "create"], f"action={action}"
+
     vedf, fedf = load_data(
         folder=folder,
         fname="vedf-fedf.pkl",
@@ -533,13 +542,19 @@ def main(
     # compter ~ 6 lettres.  Changer la taille du "BY" pour couvrir
     # de plus grandes périodes de temps
     MAX_LEN_MOTIFS = max_len_motif
+
+    motif_range = (
+        range(2, MAX_LEN_MOTIFS)
+        if specific_len_motif == 0
+        else range(specific_len_motif, specific_len_motif + 1)
+    )
     MOTIFS = create_dico_de_motifs(
         max_motif_len=MAX_LEN_MOTIFS,
         symbols_=set(BEASTS),
         authorise_explosion=authorise_explosion,
     )
 
-    for len_mot in range(2, MAX_LEN_MOTIFS):
+    for len_mot in motif_range:
         logger.info(f"Searching motif of len\t {len_mot}/{MAX_LEN_MOTIFS}")
         motifs_matches = motifs_matches_inall(
             processions_=beast_processions, mots_=MOTIFS[len_mot], with_detail=True
@@ -619,6 +634,14 @@ def parse_args():
         default=7,
     )
     parser.add_argument(
+        "--specific_len_motif",
+        "-l",
+        help="To search for motif of specific length only.  0 to search for all motifs up to max len motifs",
+        type=int,
+        default=0,
+    )
+
+    parser.add_argument(
         "--authorise_explosion",
         action="store_true",
         help="Should we authorise motifs of any lenght ?",
@@ -639,6 +662,7 @@ def main_prg():
         ts_shift=args.ts_shift,
         pipe_td=args.pipe_td,
         max_len_motif=args.motif_max_len,
+        specific_len_motif=args.specific_len_motif,
         authorise_explosion=args.authorise_explosion,
     )
 
