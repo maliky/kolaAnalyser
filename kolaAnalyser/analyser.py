@@ -356,7 +356,7 @@ def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> D
         return START_TS + botte_position * PAS_TD
 
     def pad(num):
-        return "\t\t"  * int(num)
+        return "\t"  * int(num)
     # on récupère la chaine de caractère dans l'objet
     _procession = procession_.values[0]
     LEN_SEQ = len(_procession)
@@ -370,7 +370,7 @@ def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> D
         _motif = f"{première_lettre}(?={reste_du_mot})"
 
         # print(f"{pad(SEQ_NUM[1:])}\t{i:6d}/{NB_MOTIFS:6d}", end="\r")
-        print(f"{i:6d}/{NB_MOTIFS:6d}", end="\r")
+        print(f"{i:9d}/{NB_MOTIFS:9d}", end="\r")
 
         D[tuple(mot)] = list(
             map(_trsf_botte_pos_in_ts, find_pattern(_motif, _procession))
