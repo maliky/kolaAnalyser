@@ -470,7 +470,7 @@ def motifs_matches_inall(
     # IDX_NAME = processions_.index.name
 
     # construit la dataframe avec toute les positions
-    print(f"Searching for words of len {LEN_MOT}")
+    print(f"Searching for {LEN_MOT} words")
     _df = DataFrame(None)
 
     for i in range(len(processions_)):
