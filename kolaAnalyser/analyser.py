@@ -21,14 +21,13 @@ from pandas import (
 )
 import re
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Dict
 import pickle
 
 from mlkHelper.statistiques import (
     sample,
     prepare_data,
     add_rolling_essential,
-    ldata_f as last_data_f,
     beast_boolean_mask,
     ts_extent,
 )
@@ -37,12 +36,11 @@ from mlkHelper.statcons import (
     BEASTS,
 )
 from mlkHelper.timeUtils import (
-    timedelta_to_seconds,
     get_td_from_tsindex,
     get_td_shift_from_index_name,
 )
 
-from kolaAnalyser.market_proba import ordonne_motifs, get_freq_last_letter
+from kolaAnalyser.market_proba import ordonne_motifs
 
 logger = logging.getLogger("INFO")
 
@@ -58,17 +56,6 @@ def sdata_f(df: DataFrame, frac: float, by_, cols: Sequence = LHc):
     and extened with rolling essential on by_ timeframe
     """
     return add_rolling_essential(data_f(df, frac, cols), by_=by_)
-
-
-def ldata_f(df_: DataFrame, back_multiple: int = 48, unit: str = "m"):
-    """
-    return a df with last records only
-    it is extened with rolling essential on by timeframe
-    back_multiple is the number of unit we should go back in time from last records
-    using the 'unit'
-    """
-    _ldata = last_data_f(df_, back_multiple, unit_=unit)
-    return add_rolling_essential(_ldata, by_=BY)
 
 
 def add_beast(data: DataFrame, low_: str, high_: str):
@@ -186,7 +173,7 @@ def make_sequence_in_beasts(data, sequences_indexes_: Series, ts_pas: str) -> Se
     )
 
 
-def get_last_letter(beast_sequence):
+def get_last_letter(beast_sequence) -> str:
     """
     Transforme une sequence de beast en chaine de charactère avec seulement
     la dernière lettre du nom de la bête.
@@ -271,7 +258,7 @@ def create_dico_de_motifs(max_motif_len=9, symbols_=BEASTS, authorise_explosion=
     Créer un dictionnaire de motif de différentes longueurs.
     """
     short_symbols = get_last_letter(symbols_)
-    _motifs = {0: []}
+    _motifs : Dict= {0: []}
     logger.info(
         f"Creating {max_motif_len} sets of motifs of increasing length and complexity"
     )
@@ -313,7 +300,9 @@ def motifs_matchs_ioneT(
     return None
 
 
-def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> DataFrame:
+def motifs_matches_inone(
+    procession_, motifs_: Sequence, with_detail=False
+) -> DataFrame:
     """
     Cherche les motifs de motifs_ dans la procession.
     motifs_ est une Sequence de sous-chaines de beasts de même taille.
@@ -355,26 +344,34 @@ def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> D
         """
         return START_TS + botte_position * PAS_TD
 
-    def pad(num):
-        return "\t"  * int(num)
+    # def pad(num):
+    #     return "\t"  * int(num)
     # on récupère la chaine de caractère dans l'objet
     _procession = procession_.values[0]
     LEN_SEQ = len(_procession)
 
     # on construit un dictionnaire avec
+    Q_pattern : Queue = Queue()
     D = {}
     for i, mot in enumerate(motifs_):
-        # le motif est une expression regulière qui ne consomme que un caractère
-        première_lettre = mot[0]
-        reste_du_mot = "".join(mot[1:])
-        _motif = f"{première_lettre}(?={reste_du_mot})"
-
-        # print(f"{pad(SEQ_NUM[1:])}\t{i:6d}/{NB_MOTIFS:6d}", end="\r")
-        print(f"{i:9d}/{NB_MOTIFS:9d}", end="\r")
-
-        D[tuple(mot)] = list(
-            map(_trsf_botte_pos_in_ts, find_pattern(_motif, _procession))
+        nameT = f"find_match_thread{i}"
+        t = Thread(
+            target=find_patternT,
+            name=nameT,
+            kwargs={
+                "name": nameT,
+                "mot": mot,
+                "nb_motifs": NB_MOTIFS,
+                "procession": _procession,
+                "Q": Q_pattern,
+            },
         )
+        t.start()
+
+    for _ in range(NB_MOTIFS):
+        bottes, mot, _nameT = Q_pattern.get()
+        D[tuple(mot)] = list(map(_trsf_botte_pos_in_ts, bottes))
+        print(f"{_nameT}\t\t sur {NB_MOTIFS} Done", end="\r")
 
     # on consitue une df avec le dictionnaire.
     # celle ci aura un multi-index
@@ -406,6 +403,20 @@ def motifs_matches_inone(procession_, motifs_: Sequence, with_detail=False) -> D
     return _df
 
 
+def find_patternT(name: str, mot: str, nb_motifs: int, procession, Q: Queue) -> None:
+    """
+    Find all mot in the procession of letter.
+    Returns the results in the Q.
+    Print some loging information with i the o
+    """
+    # le motif est une expression regulière qui ne consomme que un caractère
+    # la première_lettre et le reste du mot
+    _motif = f"{mot[0]}(?={''.join(mot[1:])})"
+
+    bottes = find_pattern(_motif, procession)
+    Q.put((bottes, mot, name))
+
+
 def get_matches_stat(s_: Series) -> DataFrame:
     """
     Crée à partir de la serie de positions des statistiques descriptives
@@ -421,16 +432,16 @@ def get_matches_stat(s_: Series) -> DataFrame:
     return df
 
 
-Q = Queue()
-
-
-def motifs_matches_inall(processions_, mots_: Sequence, with_detail=False) -> DataFrame:
+def motifs_matches_inall(
+    processions_, mots_: Sequence, Q: Queue, with_detail=False
+) -> DataFrame:
     """
     Pour chacune des processions, trouve la date de départ d'un de mots_
     de la Séquences fournis.  Les mots doivent pouvoir être touvé dans l'index
     de la procession.
     Renvois un dataFrame avec un colonne contenant la séquence des dates
     et pour index les mot + le numéro de la séquence
+    Q is mandatory
     """
 
     def _flatten_mot_pos(s_: Series):
@@ -446,10 +457,6 @@ def motifs_matches_inall(processions_, mots_: Sequence, with_detail=False) -> Da
     print(f"Searching for words of len {LEN_MOT}")
     _df = None
     for i in range(len(processions_)):
-        # print(f"concatenate procession {i+1:9d}/{len(processions_):9d}", end="\n")
-        # _stat = motifs_matches_inone(
-        #     processions_.iloc[i], motifs_=mots_, with_detail=False
-        # )
         name = f"Tmatch{i}"
         t = Thread(
             target=motifs_matchs_ioneT,
@@ -463,7 +470,7 @@ def motifs_matches_inall(processions_, mots_: Sequence, with_detail=False) -> Da
             },
         )
         t.start()
-        
+
     for i in range(len(processions_)):
         _stat = Q.get()
         # logger.info(f"Got _stat.index.name={_stat.index.name}")
@@ -471,7 +478,7 @@ def motifs_matches_inall(processions_, mots_: Sequence, with_detail=False) -> Da
 
     _df = _df.sort_index()  # to avoird lexsort depth performance warning
 
-    #### regroupe toute les positions des séquences en une seule
+    # ## regroupe toute les positions des séquences en une seule
     gps_mot = _df.groupby(level=list(range(LEN_MOT)))
 
     # on créer une nouvelle df avec les listes des positions
@@ -513,6 +520,8 @@ def load_data(folder: Path, fname: str, action: str, action_baggage=None):
             bname="ADAUSD",
             source_dir="Kraken",
         )
+        with open(_fname, "bw") as f:
+            pickle.dump((vedf, fedf), f)
     elif action == "load":
         with open(_fname, "br") as f:
             (vedf, fedf) = pickle.load(f)
@@ -591,11 +600,14 @@ def main(
         symbols_=set(BEASTS),
         authorise_explosion=authorise_explosion,
     )
-
+    Q_inall : Queue = Queue()
     for len_mot in motif_range:
         logger.info(f"Searching motif of len\t {len_mot}/{MAX_LEN_MOTIFS}")
         motifs_matches = motifs_matches_inall(
-            processions_=beast_processions, mots_=MOTIFS[len_mot], with_detail=True
+            processions_=beast_processions,
+            mots_=MOTIFS[len_mot],
+            Q=Q_inall,
+            with_detail=True,
         )
         logger.info(f"Sorting the words {len_mot} by conditional frequency.")
         sorted_data = ordonne_motifs(motifs_matches, MOTIFS)
