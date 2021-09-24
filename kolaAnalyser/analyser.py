@@ -13,8 +13,7 @@ import pickle
 
 from pathlib import Path
 from typing import Sequence, Dict
-from queue import Queue
-from multiprocessing import Process, Pool
+from multiprocessing import Process, Pool, Queue  # , log_to_stderr
 
 from pandas import (
     concat,
@@ -44,7 +43,9 @@ from mlkHelper.timeUtils import (
 
 from kolaAnalyser.market_proba import ordonne_motifs
 
+# logger = log_to_stderr()  # logging.getLogger("INFO")  #log_to_stderr()
 logger = logging.getLogger("INFO")
+logger.setLevel(logging.INFO)
 
 
 def data_f(df: DataFrame, frac: float, cols: Sequence = LHc):
@@ -151,7 +152,9 @@ def make_sequence_in_beasts(data, sequences_indexes_: Series, ts_pas: str) -> Se
             _beasts if not len(beast_sequences) else concat([beast_sequences, _beasts])
         )
         _seq = Series(index=_beasts.index, data=[f"s{i+1}"] * len(_beasts), name="seq")
-        sequences_num = _seq if not len(sequences_num) else concat([sequences_num, _seq])
+        sequences_num = (
+            _seq if not len(sequences_num) else concat([sequences_num, _seq])
+        )
     beast_sequences.name = "beast_seq"
     sequences_num.name = "seq"
     _df = DataFrame(beast_sequences).join(other=sequences_num)
@@ -278,18 +281,18 @@ def sous_motif_se_répète(motif):
     return False
 
 
-def motifs_matchs_ioneT(
+def motifs_matches_inoneT(
     name, procession_, motifs_: Sequence, with_detail=False, Q=None
 ):
-    logger.info(f"{name} started")
+    logger.info(f"motifs_maches_inone {name} started")
     series = motifs_matches_inone(procession_, motifs_, with_detail)
     Q.put(series)
-    logger.info(f"{name} Returned")
+    logger.info(f"motifs_maches_inone {name} Returned")
     return None
 
 
 def motifs_matches_inone(
-    procession_, motifs_: Sequence, with_detail=False
+    name: str, procession_, motifs_: Sequence, with_detail=False
 ) -> DataFrame:
     """
     Cherche les motifs de motifs_ dans la procession.
@@ -339,35 +342,34 @@ def motifs_matches_inone(
     LEN_SEQ = len(_procession)
 
     # on construit un dictionnaire avec
-    Q_pattern: Queue = Queue()
-
     # check https://docs.python.org/3/library/os.html#os.cpu_count
     nb_processors = len(os.sched_getaffinity(0))
+    logger.info(f"{name} with nb_processors={nb_processors}")
+
     with Pool(processes=nb_processors) as pool:
-        async_results = []
+        D = {}
         for i, mot in enumerate(motifs_):
-            nameP = f"matchP{i}"
+            nameP = f"matchP_{i}"
             kwargs = {
                 "name": nameP,
                 "mot": mot,
                 "procession": _procession,
-                "Q": Q_pattern,
             }
-            async_results.append(pool.apply_async(find_patternP, kwargs))
+            print(f"\t{nameP:>15}\t / {NB_MOTIFS}", end="\r")
+            bottes = pool.apply(find_patternP, kwargs)
+            D[tuple(mot)] = list(map(_trsf_botte_pos_in_ts, bottes))
 
-    pool.close()
-    D = {}
-    with Pool(processes=nb_processors) as pool2:
-        for _ in range(NB_MOTIFS):
-            bottes, mot, _nameP = Q_pattern.get()
-            print(f"{_nameP:>12}\t\t sur {NB_MOTIFS} Done", end="\r")
-            D[tuple(mot)] = list(
-                pool2.apply_async(
-                    _trsf_botte_pos_in_ts,
-                    (bottes,),
-                ).get()
-            )
-    pool2.close()
+    # with Pool(processes=nb_processors) as pool2:
+    #     for _ in range(NB_MOTIFS):
+    #         bottes, mot, _nameP = Q_pattern.get()
+    #         print(f"{_nameP:>12}\t\t sur {NB_MOTIFS} Done", end="\r")
+    #         D[tuple(mot)] = list(
+    #             pool2.apply(
+    #                 _trsf_botte_pos_in_ts,
+    #                 (bottes,),
+    #             )
+    #         )
+
     # on consitue une df avec le dictionnaire.
     # celle ci aura un multi-index
 
@@ -416,20 +418,22 @@ def find_patternT(name: str, mot: str, procession, Q: Queue) -> None:
     """
     # le motif est une expression regulière qui ne consomme que un caractère
     # la première_lettre et le reste du mot
-    logger.info(f"{name} start")
+    logger.info(f"find_patternT {name} start")
     bottes = find_pattern(f"{mot[0]}(?={''.join(mot[1:])})", procession)
     Q.put((bottes, mot, name))
-    logger.info(f"{name} returned")    
+    logger.info(f"find_patternT {name} returned")
     return None
 
 
-def find_patternP(name: str, mot: str, procession, Q: Queue) -> None:
+def find_patternP(name: str, mot: str, procession) -> Series:
     """
     Find all mot in the procession of letter.
     Returns the results in the Q.
     Print some loging information with i the o
     """
-    return find_patternT(name, mot, procession, Q)
+    bottes = find_pattern(f"{mot[0]}(?={''.join(mot[1:])})", procession)
+    print(f"{name} end", end="\r")
+    return bottes
 
 
 def get_matches_stat(s_: Series) -> DataFrame:
@@ -442,8 +446,6 @@ def get_matches_stat(s_: Series) -> DataFrame:
     """
     _nb_matches = s_.apply(len)
     df = DataFrame({"nb_match": _nb_matches, "fmot": _nb_matches / len(s_) * 100})
-    # on réordonne les colonnes
-    # s_ = s_.loc[:, ["fmot", "nb_match", "mot_pos"]]
     return df
 
 
@@ -471,24 +473,17 @@ def motifs_matches_inall(
     # construit la dataframe avec toute les positions
     print(f"Searching for words of len {LEN_MOT}")
     _df = DataFrame(None)
-    for i in range(len(processions_)):
-        name = f"Tmatch{i}"
-        p = Process(
-            target=motifs_matchs_ioneT,
-            name=name,
-            kwargs={
-                "name": name,
-                "procession_": processions_.iloc[i],
-                "motifs_": mots_,
-                "with_detail": False,
-                "Q": Q,
-            },
-        )
-        p.start()
 
     for i in range(len(processions_)):
-        _stat = Q.get()
-        # logger.info(f"Got _stat.index.name={_stat.index.name}")
+        name = f"Tmatch_{i}"
+        kwargs = {
+            "name": name,
+            "procession_": processions_.iloc[i],
+            "motifs_": mots_,
+            "with_detail": False,
+        }
+        print(f"Handling procession {i:>9}/{len(processions_)}")
+        _stat = motifs_matches_inone(**kwargs)
         _df = _stat if not len(_df) else concat([_df, _stat])
 
     _df = _df.sort_index()  # to avoird lexsort depth performance warning
