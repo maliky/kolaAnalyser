@@ -612,14 +612,14 @@ def main(
     )
     Q_inall: Queue = Queue()
     for len_mot in motif_range:
-        logger.info(f"Searching motif of len\t {len_mot}/{MAX_LEN_MOTIFS}")
+        logger.info(f"Searching motif of len {len_mot:>10}/{MAX_LEN_MOTIFS}")
         motifs_matches = motifs_matches_inall(
             processions_=beast_processions,
             mots_=MOTIFS[len_mot],
             Q=Q_inall,
             with_detail=True,
         )
-        logger.info(f"Sorting the words {len_mot} by conditional frequency.")
+        logger.info(f"Sorting the words {len_mot:>10} by conditional frequency.")
         sorted_data = ordonne_motifs(motifs_matches, MOTIFS)
         bname = f"motifs_{sorted_data.columns.name}_mot{len_mot}"
 
