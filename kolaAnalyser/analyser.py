@@ -432,7 +432,6 @@ def find_patternP(name: str, mot: str, procession) -> Series:
     Print some loging information with i the o
     """
     bottes = find_pattern(f"{mot[0]}(?={''.join(mot[1:])})", procession)
-    print(f"{name} end", end="\r")
     return bottes
 
 
