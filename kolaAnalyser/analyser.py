@@ -147,7 +147,7 @@ def make_sequence_in_beasts(data, sequences_indexes_: Series, ts_pas: str) -> Se
     # pour chaque indexes, liste de dates séparées par un ts_pas
     # on récupère les données prix, max_high low ect..
     for i, idx in enumerate(sequences_indexes_):
-        print(f"{i:9d}/{len(sequences_indexes_):9d}", end="\r")
+        print(f"{i:>4d}/{len(sequences_indexes_)}", end="\r")
         _prix = data.loc[idx].dropna()  # normalement n'enlève qu'un champs
 
         # on créér une série pour plus facilement la concaténé par la suite
@@ -274,7 +274,7 @@ def motifs_sans_répétition(motifs):
     et renvoie une liste de motifs sans répétition"""
     res = []
     for i, motif in enumerate(motifs):
-        print(f"{i:9d}/{len(motifs):9d}", end="\r")
+        print(f"{i:>9d}/{len(motifs)}", end="\r")
         if not sous_motif_se_répète(motif):
             res += motif
     return res
@@ -371,7 +371,7 @@ def motifs_matches_inone(
     for _ in range(NB_MOTIFS):
         bottes, mot, _nameT = Q_pattern.get()
         D[tuple(mot)] = list(map(_trsf_botte_pos_in_ts, bottes))
-        print(f"{_nameT}\t\t sur {NB_MOTIFS} Done", end="\r")
+        print(f"{_nameT:>12}\t\t sur {NB_MOTIFS} Done", end="\r")
 
     # on consitue une df avec le dictionnaire.
     # celle ci aura un multi-index
@@ -486,7 +486,7 @@ def motifs_matches_inall(
     # séquence en une seule séquence
     D = {}
     for i, mot in enumerate(mots_):
-        print(f"{i+1:9d}/{len(mots_):9d}", end="\r")
+        print(f"{i+1:>9d}/{len(mots_)}", end="\r")
         gp_mot = gps_mot.get_group(tuple(mot))
         D[tuple(mot)] = _flatten_mot_pos(gp_mot.mot_pos)
 
