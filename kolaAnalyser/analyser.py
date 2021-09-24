@@ -6,10 +6,16 @@ ex. 7, 11, 13, 17, 19, 23, 31, 37, 41, 47, 49, 53, 59  minutes. (nombre entiers)
 """
 # need to parallesise the code et do it in Haskell
 import logging
-from threading import Thread
-from queue import Queue
-
+import os
+import re
 import argparse
+import pickle
+
+from pathlib import Path
+from typing import Sequence, Dict
+from queue import Queue
+from multiprocessing import Process, Pool
+
 from pandas import (
     concat,
     DataFrame,
@@ -19,10 +25,6 @@ from pandas import (
     Timedelta,
     Timestamp,
 )
-import re
-from pathlib import Path
-from typing import Sequence, Dict
-import pickle
 
 from mlkHelper.statistiques import (
     sample,
@@ -70,20 +72,6 @@ def add_beast(data: DataFrame, low_: str, high_: str):
         ndata.loc[mask, "beasts"] = _name
 
     return ndata
-
-
-def find_pattern(pat: str, in_chaine):
-    """
-    Renvois les indices de début du pattern pat
-    dans in_chaine
-    le pattern doit être de la form p(?=rp) si
-    l'on veut les objects qui se superposent
-    """
-    import re
-
-    rpat = re.compile(pat)
-    found = re.finditer(rpat, in_chaine)
-    return [match.start() for match in found]
 
 
 def create_indexes_en_creneaux(data: DataFrame, ts_pas, freq_décalage="60s") -> Series:
@@ -142,8 +130,8 @@ def make_sequence_in_beasts(data, sequences_indexes_: Series, ts_pas: str) -> Se
         f" starting with a {Timedelta(_td*1e9)}s shift"
     )
 
-    beast_sequences = None
-    sequences_num = None
+    beast_sequences = Series(None)
+    sequences_num = Series(None)
     # pour chaque indexes, liste de dates séparées par un ts_pas
     # on récupère les données prix, max_high low ect..
     for i, idx in enumerate(sequences_indexes_):
@@ -160,10 +148,10 @@ def make_sequence_in_beasts(data, sequences_indexes_: Series, ts_pas: str) -> Se
             name=idx[0].strftime("%Y-%m-%dT%H:%M"),  # le nom c'est la date
         )
         beast_sequences = (
-            _beasts if beast_sequences is None else concat([beast_sequences, _beasts])
+            _beasts if not len(beast_sequences) else concat([beast_sequences, _beasts])
         )
         _seq = Series(index=_beasts.index, data=[f"s{i+1}"] * len(_beasts), name="seq")
-        sequences_num = _seq if sequences_num is None else concat([sequences_num, _seq])
+        sequences_num = _seq if not len(sequences_num) else concat([sequences_num, _seq])
     beast_sequences.name = "beast_seq"
     sequences_num.name = "seq"
     _df = DataFrame(beast_sequences).join(other=sequences_num)
@@ -258,7 +246,7 @@ def create_dico_de_motifs(max_motif_len=9, symbols_=BEASTS, authorise_explosion=
     Créer un dictionnaire de motif de différentes longueurs.
     """
     short_symbols = get_last_letter(symbols_)
-    _motifs : Dict= {0: []}
+    _motifs: Dict = {0: []}
     logger.info(
         f"Creating {max_motif_len} sets of motifs of increasing length and complexity"
     )
@@ -293,10 +281,10 @@ def sous_motif_se_répète(motif):
 def motifs_matchs_ioneT(
     name, procession_, motifs_: Sequence, with_detail=False, Q=None
 ):
-    logger.info(f"{name} started.")
+    logger.info(f"{name} started")
     series = motifs_matches_inone(procession_, motifs_, with_detail)
     Q.put(series)
-    logger.info(f"{name} Returned.")
+    logger.info(f"{name} Returned")
     return None
 
 
@@ -351,28 +339,35 @@ def motifs_matches_inone(
     LEN_SEQ = len(_procession)
 
     # on construit un dictionnaire avec
-    Q_pattern : Queue = Queue()
-    D = {}
-    for i, mot in enumerate(motifs_):
-        nameT = f"find_match_thread{i}"
-        t = Thread(
-            target=find_patternT,
-            name=nameT,
-            kwargs={
-                "name": nameT,
+    Q_pattern: Queue = Queue()
+
+    # check https://docs.python.org/3/library/os.html#os.cpu_count
+    nb_processors = len(os.sched_getaffinity(0))
+    with Pool(processes=nb_processors) as pool:
+        async_results = []
+        for i, mot in enumerate(motifs_):
+            nameP = f"matchP{i}"
+            kwargs = {
+                "name": nameP,
                 "mot": mot,
-                "nb_motifs": NB_MOTIFS,
                 "procession": _procession,
                 "Q": Q_pattern,
-            },
-        )
-        t.start()
+            }
+            async_results.append(pool.apply_async(find_patternP, kwargs))
 
-    for _ in range(NB_MOTIFS):
-        bottes, mot, _nameT = Q_pattern.get()
-        D[tuple(mot)] = list(map(_trsf_botte_pos_in_ts, bottes))
-        print(f"{_nameT:>12}\t\t sur {NB_MOTIFS} Done", end="\r")
-
+    pool.close()
+    D = {}
+    with Pool(processes=nb_processors) as pool2:
+        for _ in range(NB_MOTIFS):
+            bottes, mot, _nameP = Q_pattern.get()
+            print(f"{_nameP:>12}\t\t sur {NB_MOTIFS} Done", end="\r")
+            D[tuple(mot)] = list(
+                pool2.apply_async(
+                    _trsf_botte_pos_in_ts,
+                    (bottes,),
+                ).get()
+            )
+    pool2.close()
     # on consitue une df avec le dictionnaire.
     # celle ci aura un multi-index
 
@@ -403,7 +398,17 @@ def motifs_matches_inone(
     return _df
 
 
-def find_patternT(name: str, mot: str, nb_motifs: int, procession, Q: Queue) -> None:
+def find_pattern(pat: str, in_chaine):
+    """
+    Renvois les indices de début du pattern pat
+    dans in_chaine
+    le pattern doit être de la form p(?=rp) si
+    l'on veut les objects qui se superposent
+    """
+    return [match.start() for match in re.finditer(re.compile(pat), in_chaine)]
+
+
+def find_patternT(name: str, mot: str, procession, Q: Queue) -> None:
     """
     Find all mot in the procession of letter.
     Returns the results in the Q.
@@ -411,10 +416,20 @@ def find_patternT(name: str, mot: str, nb_motifs: int, procession, Q: Queue) -> 
     """
     # le motif est une expression regulière qui ne consomme que un caractère
     # la première_lettre et le reste du mot
-    _motif = f"{mot[0]}(?={''.join(mot[1:])})"
-
-    bottes = find_pattern(_motif, procession)
+    logger.info(f"{name} start")
+    bottes = find_pattern(f"{mot[0]}(?={''.join(mot[1:])})", procession)
     Q.put((bottes, mot, name))
+    logger.info(f"{name} returned")    
+    return None
+
+
+def find_patternP(name: str, mot: str, procession, Q: Queue) -> None:
+    """
+    Find all mot in the procession of letter.
+    Returns the results in the Q.
+    Print some loging information with i the o
+    """
+    return find_patternT(name, mot, procession, Q)
 
 
 def get_matches_stat(s_: Series) -> DataFrame:
@@ -455,10 +470,10 @@ def motifs_matches_inall(
 
     # construit la dataframe avec toute les positions
     print(f"Searching for words of len {LEN_MOT}")
-    _df = None
+    _df = DataFrame(None)
     for i in range(len(processions_)):
         name = f"Tmatch{i}"
-        t = Thread(
+        p = Process(
             target=motifs_matchs_ioneT,
             name=name,
             kwargs={
@@ -469,12 +484,12 @@ def motifs_matches_inall(
                 "Q": Q,
             },
         )
-        t.start()
+        p.start()
 
     for i in range(len(processions_)):
         _stat = Q.get()
         # logger.info(f"Got _stat.index.name={_stat.index.name}")
-        _df = _stat if _df is None else concat([_df, _stat])
+        _df = _stat if not len(_df) else concat([_df, _stat])
 
     _df = _df.sort_index()  # to avoird lexsort depth performance warning
 
@@ -600,7 +615,7 @@ def main(
         symbols_=set(BEASTS),
         authorise_explosion=authorise_explosion,
     )
-    Q_inall : Queue = Queue()
+    Q_inall: Queue = Queue()
     for len_mot in motif_range:
         logger.info(f"Searching motif of len\t {len_mot}/{MAX_LEN_MOTIFS}")
         motifs_matches = motifs_matches_inall(
