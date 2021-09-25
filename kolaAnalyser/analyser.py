@@ -13,8 +13,7 @@ import pickle
 
 from pathlib import Path
 from typing import Sequence, List, Set
-from multiprocessing import Queue  # , log_to_stderr
-from multiprocessing.dummy import Pool as ThreadedPool  # , log_to_stderr
+from multiprocessing import Pool  # , log_to_stderr
 from numpy import ndarray
 from pandas import (
     concat,
@@ -339,11 +338,10 @@ def motifs_matches_inone(
     nb_processors = len(os.sched_getaffinity(0))
     logger.info(f"{name} hoping with {nb_processors} Thread / Node")
 
-    with ThreadedPool() as tpool:
+    with Pool() as pool:
         D = {}
         for i, mot in enumerate(motifs_):
-            nameP = f"matchP {i:>9}"
-            print(f"\t{nameP:>17}\t / {NB_MOTIFS}", end="\r")
+            print(f"matchP-{i:->6}\t sur {NB_MOTIFS}", end="\r")
 
             kwargs = {
                 "mot": mot,
@@ -351,7 +349,7 @@ def motifs_matches_inone(
             }
 
             D[tuple(mot)] = list(
-                map(_trsf_botte_pos_in_ts, tpool.apply(find_patternP, kwargs))
+                map(_trsf_botte_pos_in_ts, pool.apply(find_patternP, (), kwargs))
             )
 
     # on consitue une df avec le dictionnaire.
@@ -416,16 +414,13 @@ def get_matches_stat(s_: Series) -> DataFrame:
     return df
 
 
-def motifs_matches_inall(
-    processions_, mots_: Sequence, Q: Queue, with_detail=False
-) -> DataFrame:
+def motifs_matches_inall(processions_, mots_: Sequence, with_detail=False) -> DataFrame:
     """
     Pour chacune des processions, trouve la date de départ d'un de mots_
     de la Séquences fournis.  Les mots doivent pouvoir être touvé dans l'index
     de la procession.
     Renvois un dataFrame avec un colonne contenant la séquence des dates
     et pour index les mot + le numéro de la séquence
-    Q is mandatory
     """
 
     def _flatten_mot_pos(s_: Series):
@@ -442,7 +437,7 @@ def motifs_matches_inall(
     _df = DataFrame(None)
     # with Pool() as pool:
     for i in range(len(processions_)):
-        name = f"processions {i:>9}"
+        name = f"processions{i:->4}"
         print(f"Starting Process {name:>22} sur {len(processions_)}")
         kwargs = {
             "name": name,
@@ -466,8 +461,6 @@ def motifs_matches_inall(
     D = {}
     for i, mot in enumerate(mots_):
         print(f"{i+1:>9d}/{len(mots_)}", end="\r")
-        # import ipdb; ipdb.set_trace()
-
         gp_mot = gps_mot.get_group(tuple(mot))
         D[tuple(mot)] = _flatten_mot_pos(gp_mot.mot_pos)
 
@@ -567,7 +560,6 @@ def main(
     MAX_LEN_MOTIFS = motifs_lens[-1]
 
     MOTIFS = create_dico_de_motifs_sets(motifs_lens, beast_processions)
-    Q_inall: Queue = Queue()
     # https://stackoverflow.com/questions/2846653/how-can-i-use-threading-in-python#28463266
     # check a multiprocess here and then a mutlithreading
     # sa permettrait peut-être d'utiliser les processeurs des différents noeud
@@ -577,14 +569,15 @@ def main(
         motifs_matches = motifs_matches_inall(
             processions_=beast_processions,
             mots_=list(MOTIFS[len_mot]),
-            Q=Q_inall,
             with_detail=True,
         )
-        logger.info(f"Sorting the words {len_mot:>10} by conditional frequency.")
+
+        logger.info(f"Sorting and computing conditional proba {len_mot:>9}.")
         sorted_data = ordonne_motifs(motifs_matches, MOTIFS)
         bname = f"motifs_{sorted_data.columns.name}_mot{len_mot}"
 
         fname_csv = folder.joinpath(f"{bname}.csv")
+
         with open(fname_csv, "w") as f:
             logger.info(f"Saving to {fname_csv}")
             sorted_data.loc[
