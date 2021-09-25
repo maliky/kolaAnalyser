@@ -610,6 +610,10 @@ def main(
         authorise_explosion=authorise_explosion,
     )
     Q_inall: Queue = Queue()
+    # https://stackoverflow.com/questions/2846653/how-can-i-use-threading-in-python#28463266
+    # check a multiprocess here and then a mutlithreading
+    # sa permettrait peut-être d'utiliser les processeurs des différents noeud
+    
     for len_mot in motif_range:
         logger.info(f"Searching motif of len {len_mot:>10}/{MAX_LEN_MOTIFS}")
         motifs_matches = motifs_matches_inall(
