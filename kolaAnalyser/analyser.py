@@ -12,9 +12,10 @@ import argparse
 import pickle
 
 from pathlib import Path
-from typing import Sequence, Dict
-from multiprocessing import Process, Pool, Queue  # , log_to_stderr
-
+from typing import Sequence, List, Set
+from multiprocessing import Queue  # , log_to_stderr
+from multiprocessing.dummy import Pool as ThreadedPool  # , log_to_stderr
+from numpy import ndarray
 from pandas import (
     concat,
     DataFrame,
@@ -84,22 +85,29 @@ def create_indexes_en_creneaux(data: DataFrame, ts_pas, freq_décalage="60s") ->
     chaque champs est un index légèrement décalé par rapport aux autres.
     le décalage est de freq_décalage. et le pas des indexes est ts_pas
     """
-    start_ts, end_ts = ts_extent(data)
-    start_end_ts = start_ts + Timedelta(ts_pas) - Timedelta("60s")
+    start_ts, END_TS = ts_extent(data)
+    PAS = Timedelta(ts_pas)
+    start_end_ts = start_ts + PAS - Timedelta("60s")
     start_ts_range = date_range(
         start=start_ts, end=start_end_ts, freq=Timedelta(freq_décalage)
     )
 
-    _indexes = {}
+    def _make_index_with_PAS(start_ts_):
+        """Fais un DatetimeIndex de pas voulu commençant à start_ts_"""
+        return date_range(start=start_ts_, end=END_TS, freq=PAS)
+
     logger.info(
         f"Creating {len(start_ts_range)} '{ts_pas}' indexes"
-        f" starting with a {freq_décalage} shift."
+        f" décalés de {freq_décalage}"
+        f" et de longueur {len(_make_index_with_PAS(start_ts)):>9d}"
     )
 
+    # pour chaque date de départ avec le shift spécifié
+    # on créons un index DatetimeIndex avec le pas voulu.
+    _indexes = {}
     for i, start_ts in enumerate(start_ts_range):
-        print(f"{i+1:3d}/{len(start_ts_range):3d} :\t{start_ts}", end="\r")
-        _index = date_range(start=start_ts, end=end_ts, freq=Timedelta(ts_pas))
-        _indexes[start_ts] = _index
+        print(f"{i+1:3d}/{len(start_ts_range)} :\t{start_ts}", end="\r")
+        _indexes[start_ts] = _make_index_with_PAS(start_ts)
 
     indexes = Series(_indexes)
     # on homogénéise les indexes certain on un champ de plus que les autres
@@ -209,86 +217,71 @@ def build_beast_processsions(data: Series) -> DataFrame:
     return df
 
 
-def make_motifs(current_motifs, current_n, symbols, authorize_explosion=False):
+def get_mots_du_corpus_as_set(df_: DataFrame, taille_mot: int) -> set:
     """
-    Attention explose exponentiellement.  Génère len(symbol)**current_n elements
+    Prend un corpus sous forme de dataFrame
+    et renvois tout les mots de taille_mot
     """
-
-    def _complexity():
-        m = len(current_motifs)
-        _n = current_n
-        s = len(symbols)
-        complex = m * (s ** _n)
-        return complex if complex else 1
-
-    print(
-        f"La complexité est {len(current_motifs)} * ({len(symbols)} ** {current_n})="
-        f"{_complexity()}",
-        end="\r",
-    )
-
-    assert authorize_explosion or _complexity() < 5e6, (
-        f"You're asking for {_complexity()} new elements. "
-        "It make take time to process.  ",
-        "If you are sure, set authorised_explosition=True.  "
-        "Use m * (s ** _n) to estimate complexity. with m (# of current_motif), s (# symbols), _n (current_n)",
-    )
-    if current_n == 0:
-        return current_motifs
-
-    if current_motifs:
-        new_motifs = [symbol + motif for motif in current_motifs for symbol in symbols]
-    else:
-        new_motifs = symbols
-
-    return make_motifs(new_motifs, current_n - 1, symbols, authorize_explosion)
+    docs = get_corpus_from_beast_processions(df_)
+    len_range = len(docs[0]) - taille_mot + 1
+    return set([doc[i : i + taille_mot] for doc in docs for i in range(len_range)])
 
 
-def create_dico_de_motifs(max_motif_len=9, symbols_=BEASTS, authorise_explosion=False):
+def get_corpus_from_beast_processions(df_: DataFrame) -> ndarray:
     """
-    Créer un dictionnaire de motif de différentes longueurs.
+    Prend un DataFrame spécifique appelé beast_procession
+    qui a une colonne appelé procession contenant une longue chaine de caractère
+    représentant un document.
+    Extrait ces chaines et renvois un tableau avec
     """
-    short_symbols = get_last_letter(symbols_)
-    _motifs: Dict = {0: []}
-    logger.info(
-        f"Creating {max_motif_len} sets of motifs of increasing length and complexity"
-    )
-    for i in range(max_motif_len):
-        print(f"motif of length {i+1}", end="\r")
-        _motifs[i + 1] = make_motifs(_motifs[i], 1, short_symbols, authorise_explosion)
-    return _motifs
+    assert "processions" in df_.columns, f"_df.columns={df_.columns}"
+    values = df_.processions.values
+    # on vérifie que tout les docs on la même longueur (il faudrait qqpart)
+    return values
 
 
-def motifs_sans_répétition(motifs):
-    """
-    Filtre la liste de motifs
-    et renvoie une liste de motifs sans répétition"""
-    res = []
-    for i, motif in enumerate(motifs):
-        print(f"{i:>9d}/{len(motifs)}", end="\r")
-        if not sous_motif_se_répète(motif):
-            res += motif
-    return res
+def get_last_word_of_corpus(df_: DataFrame, taille_mot: int) -> Set[str]:
+    """Renvois l'ensemble des derniers mots de taille_mot de chaque documents du corpus"""
+    if taille_mot == 1:
+        return set()
+
+    docs = get_corpus_from_beast_processions(df_)
+    return set(map(lambda d: d[-taille_mot:], docs))
 
 
-def sous_motif_se_répète(motif):
-    """Renvois true si un sous motif se répète. sur tout le motif"""
-    taille_max_sous_motif = len(motif) // 2
-    for n in range(1, taille_max_sous_motif + 1):
-        sous_motif = f"^({motif[:n]})+$"
-        if re.fullmatch(re.compile(sous_motif), motif):
-            return True
-    return False
+def create_dico_de_motifs_sets(longueurs_: List[int], corpus: DataFrame):
+    """Créer un dictionnaire de motif de différentes longueurs à partir des symbols utilisé dans le corpus."""
 
+    def _assert_mot_equal_len(mots_):
+        len_mots = list(map(lambda m: len(m), mots_))
+        message = f"Les mots ont des tailles différentes : {set(len_mots)}"
+        assert sum([len_mot - max(len_mots) for len_mot in len_mots]) == 0, message
 
-def motifs_matches_inoneT(
-    name, procession_, motifs_: Sequence, with_detail=False, Q=None
-):
-    logger.info(f"motifs_maches_inone {name} started")
-    series = motifs_matches_inone(procession_, motifs_, with_detail)
-    Q.put(series)
-    logger.info(f"motifs_maches_inone {name} Returned")
-    return None
+    _longueurs = sorted(longueurs_)
+
+    taille_max_mot = _longueurs[-1]
+
+    mots_à_la_taille = {
+        taille_max_mot: get_mots_du_corpus_as_set(corpus, taille_max_mot)
+    }
+
+    # de la plus grande à la plus petite taille en excluant le max
+    for taille_mot in _longueurs[::-1][1:]:
+        if taille_mot + 1 in mots_à_la_taille.keys():
+            mots_à_la_taille[taille_mot] = {
+                m[:-1] for m in mots_à_la_taille[taille_mot + 1]
+            } | get_last_word_of_corpus(corpus, taille_mot)
+        else:
+            mots_à_la_taille[taille_mot] = get_mots_du_corpus_as_set(corpus, taille_mot)
+        try:
+            _assert_mot_equal_len(mots_à_la_taille[taille_mot])
+        except AssertionError as ae:
+            import ipdb
+
+            ipdb.set_trace()
+            raise (ae)
+
+    return mots_à_la_taille
 
 
 def motifs_matches_inone(
@@ -344,31 +337,22 @@ def motifs_matches_inone(
     # on construit un dictionnaire avec
     # check https://docs.python.org/3/library/os.html#os.cpu_count
     nb_processors = len(os.sched_getaffinity(0))
-    logger.info(f"{name} with nb_processors={nb_processors}")
+    logger.info(f"{name} hoping with {nb_processors} Thread / Node")
 
-    with Pool(processes=nb_processors) as pool:
+    with ThreadedPool() as tpool:
         D = {}
         for i, mot in enumerate(motifs_):
-            nameP = f"matchP_{i}"
+            nameP = f"matchP {i:>9}"
+            print(f"\t{nameP:>17}\t / {NB_MOTIFS}", end="\r")
+
             kwargs = {
-                "name": nameP,
                 "mot": mot,
                 "procession": _procession,
             }
-            print(f"\t{nameP:>15}\t / {NB_MOTIFS}", end="\r")
-            bottes = pool.apply(find_patternP, kwargs)
-            D[tuple(mot)] = list(map(_trsf_botte_pos_in_ts, bottes))
 
-    # with Pool(processes=nb_processors) as pool2:
-    #     for _ in range(NB_MOTIFS):
-    #         bottes, mot, _nameP = Q_pattern.get()
-    #         print(f"{_nameP:>12}\t\t sur {NB_MOTIFS} Done", end="\r")
-    #         D[tuple(mot)] = list(
-    #             pool2.apply(
-    #                 _trsf_botte_pos_in_ts,
-    #                 (bottes,),
-    #             )
-    #         )
+            D[tuple(mot)] = list(
+                map(_trsf_botte_pos_in_ts, tpool.apply(find_patternP, kwargs))
+            )
 
     # on consitue une df avec le dictionnaire.
     # celle ci aura un multi-index
@@ -400,7 +384,7 @@ def motifs_matches_inone(
     return _df
 
 
-def find_pattern(pat: str, in_chaine):
+def find_pattern(pat: str, in_chaine) -> List:
     """
     Renvois les indices de début du pattern pat
     dans in_chaine
@@ -410,29 +394,13 @@ def find_pattern(pat: str, in_chaine):
     return [match.start() for match in re.finditer(re.compile(pat), in_chaine)]
 
 
-def find_patternT(name: str, mot: str, procession, Q: Queue) -> None:
+def find_patternP(mot: str, procession) -> Series:
     """
     Find all mot in the procession of letter.
     Returns the results in the Q.
     Print some loging information with i the o
     """
-    # le motif est une expression regulière qui ne consomme que un caractère
-    # la première_lettre et le reste du mot
-    logger.info(f"find_patternT {name} start")
-    bottes = find_pattern(f"{mot[0]}(?={''.join(mot[1:])})", procession)
-    Q.put((bottes, mot, name))
-    logger.info(f"find_patternT {name} returned")
-    return None
-
-
-def find_patternP(name: str, mot: str, procession) -> Series:
-    """
-    Find all mot in the procession of letter.
-    Returns the results in the Q.
-    Print some loging information with i the o
-    """
-    bottes = find_pattern(f"{mot[0]}(?={''.join(mot[1:])})", procession)
-    return bottes
+    return find_pattern(f"{mot[0]}(?={''.join(mot[1:])})", procession)
 
 
 def get_matches_stat(s_: Series) -> DataFrame:
@@ -472,16 +440,18 @@ def motifs_matches_inall(
     # construit la dataframe avec toute les positions
     print(f"Searching for {LEN_MOT} words")
     _df = DataFrame(None)
-
+    # with Pool() as pool:
     for i in range(len(processions_)):
-        name = f"Tmatch_{i}"
+        name = f"processions {i:>9}"
+        print(f"Starting Process {name:>22} sur {len(processions_)}")
         kwargs = {
             "name": name,
             "procession_": processions_.iloc[i],
             "motifs_": mots_,
             "with_detail": False,
         }
-        print(f"Handling procession {i:>9}/{len(processions_)}")
+        # print(f"type >>> {type(kwargs['procession_'])}")
+        # _stat = pool.apply(motifs_matches_inoneP, kwargs)
         _stat = motifs_matches_inone(**kwargs)
         _df = _stat if not len(_df) else concat([_df, _stat])
 
@@ -496,6 +466,8 @@ def motifs_matches_inall(
     D = {}
     for i, mot in enumerate(mots_):
         print(f"{i+1:>9d}/{len(mots_)}", end="\r")
+        # import ipdb; ipdb.set_trace()
+
         gp_mot = gps_mot.get_group(tuple(mot))
         D[tuple(mot)] = _flatten_mot_pos(gp_mot.mot_pos)
 
@@ -544,19 +516,13 @@ def main(
     action="load",
     ts_shift=None,
     pipe_td="1d",
-    max_len_motif=7,
-    specific_len_motif=0,
-    authorise_explosion=False,
+    motifs_lens=[6],
 ):
     """
     Executing main élement of the programme
     loading the data,
     sequencing it, extraction of beasts and analysis of motifs
     """
-    assert max_len_motif > 2, f"max_len_motif={max_len_motif}"
-    assert (
-        max_len_motif >= specific_len_motif
-    ), f"max_len_motif={max_len_motif}, specific_len_motif={specific_len_motif}"
     assert action in ["load", "save", "create"], f"action={action}"
 
     vedf, fedf = load_data(
@@ -597,28 +563,20 @@ def main(
     # la taille d'un mot est limité par la puissance de calcule, la sa généricité.
     # compter ~ 6 lettres.  Changer la taille du "BY" pour couvrir
     # de plus grandes périodes de temps
-    MAX_LEN_MOTIFS = max_len_motif
+    motifs_lens = sorted(motifs_lens)
+    MAX_LEN_MOTIFS = motifs_lens[-1]
 
-    motif_range = (
-        range(2, MAX_LEN_MOTIFS)
-        if specific_len_motif == 0
-        else range(specific_len_motif, specific_len_motif + 1)
-    )
-    MOTIFS = create_dico_de_motifs(
-        max_motif_len=MAX_LEN_MOTIFS,
-        symbols_=set(BEASTS),
-        authorise_explosion=authorise_explosion,
-    )
+    MOTIFS = create_dico_de_motifs_sets(motifs_lens, beast_processions)
     Q_inall: Queue = Queue()
     # https://stackoverflow.com/questions/2846653/how-can-i-use-threading-in-python#28463266
     # check a multiprocess here and then a mutlithreading
     # sa permettrait peut-être d'utiliser les processeurs des différents noeud
-    
-    for len_mot in motif_range:
-        logger.info(f"Searching motif of len {len_mot:>10}/{MAX_LEN_MOTIFS}")
+
+    for len_mot in motifs_lens:
+        logger.info(f"Searching motif of len {len_mot:>2}/{MAX_LEN_MOTIFS}")
         motifs_matches = motifs_matches_inall(
             processions_=beast_processions,
-            mots_=MOTIFS[len_mot],
+            mots_=list(MOTIFS[len_mot]),
             Q=Q_inall,
             with_detail=True,
         )
@@ -688,26 +646,12 @@ def parse_args():
         default="1d",
     )
     parser.add_argument(
-        "--motif_max_len",
+        "--motifs_lens",
         "-m",
-        help=(
-            "We will be searching and saving statistiques for motifs from len 1 to motif_max_len. Set it here. Carrefull this can explode "
-        ),
+        nargs="+",
+        default=[2],
+        help=("La liste des longueurs de mots qui vont être cherchés dans le corpus."),
         type=int,
-        default=7,
-    )
-    parser.add_argument(
-        "--specific_len_motif",
-        "-l",
-        help="To search for motif of specific length only.  0 to search for all motifs up to max len motifs",
-        type=int,
-        default=0,
-    )
-
-    parser.add_argument(
-        "--authorise_explosion",
-        action="store_true",
-        help="Should we authorise motifs of any lenght ?",
     )
 
     return parser.parse_args()
@@ -724,9 +668,7 @@ def main_prg():
         action=args.action,
         ts_shift=args.ts_shift,
         pipe_td=args.pipe_td,
-        max_len_motif=args.motif_max_len,
-        specific_len_motif=args.specific_len_motif,
-        authorise_explosion=args.authorise_explosion,
+        motifs_lens=args.motifs_lens,
     )
 
 
