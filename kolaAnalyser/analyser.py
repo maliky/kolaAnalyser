@@ -95,10 +95,10 @@ def create_indexes_en_creneaux(data: DataFrame, ts_pas, freq_décalage="60s") ->
         """Fais un DatetimeIndex de pas voulu commençant à start_ts_"""
         return date_range(start=start_ts_, end=END_TS, freq=PAS)
 
+    len_sequence = f"{len(_make_index_with_PAS(start_ts)):->9,d}".replace(",", " ")
     logger.info(
         f"Creating {len(start_ts_range)} '{ts_pas}' indexes"
-        f" décalés de {freq_décalage}"
-        f" et de longueur {len(_make_index_with_PAS(start_ts)):>9d}"
+        f" décalés de {freq_décalage} et de longueur {len_sequence}"
     )
 
     # pour chaque date de départ avec le shift spécifié
@@ -437,11 +437,11 @@ def motifs_matches_inall(processions_, mots_: Sequence, with_detail=False) -> Da
     # IDX_NAME = processions_.index.name
 
     # construit la dataframe avec toute les positions
-    print(f"Searching for {LEN_MOT} words")
+    logger.info(f"Searching {LEN_MOT} letters words")
     _df = DataFrame(None)
     # with Pool() as pool:
     for i in range(len(processions_)):
-        name = f"processions-{i:->4}"
+        name = f"processions n{i:->4}"
         print(f"Starting {name} sur {len(processions_)}")
         kwargs = {
             "name": name,

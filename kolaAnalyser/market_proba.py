@@ -10,7 +10,6 @@ def ordonne_motifs(df_: DataFrame, motifs: Dict) -> DataFrame:
     fréquence et de la fréquence d'avoir la dernière lettre
     connaissant le mot précédent.
     """
-    import ipdb; ipdb.set_trace()
 
     freq_cond = freq_last_lettre_sachant_mots(df_, motifs)
     prod_freq = Series(df_.fmot * freq_cond, name="prod_freq")
