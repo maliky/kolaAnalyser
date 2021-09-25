@@ -143,7 +143,7 @@ def make_sequence_in_beasts(data, sequences_indexes_: Series, ts_pas: str) -> Se
     # pour chaque indexes, liste de dates séparées par un ts_pas
     # on récupère les données prix, max_high low ect..
     for i, idx in enumerate(sequences_indexes_):
-        print(f"{i:>4d}/{len(sequences_indexes_)}", end="\r")
+        print(f"{i:->4d}/{len(sequences_indexes_)}", end="\r")
         _prix = data.loc[idx].dropna()  # normalement n'enlève qu'un champs
 
         # on créér une série pour plus facilement la concaténé par la suite
@@ -203,8 +203,10 @@ def build_beast_processsions(data: Series) -> DataFrame:
         f"Regroupe les données selon le 2ème level de l'index (ie : {data.index.names[1]}), "
         f"len(gps)={len(gps)}"
     )
+    len_gps = f"{len(gps):->9,d}".replace(",", " ")
     for i, (seq_name, _beast_seq) in enumerate(gps):
-        print(f"{i+1:9d}/{len(gps):9d}", end="\r")
+        len_i = f"{i+1:->9,}".replace(",", " ")
+        print(f"{len_i}/{len_gps}", end="\r")
         start_ts = _beast_seq.index[0]
         _patterns[start_ts] = get_last_letter(_beast_seq.values)
 
@@ -311,8 +313,7 @@ def motifs_matches_inone(
     PAS_TD = Timedelta(get_td_shift_from_index_name(procession_))
 
     # tout les motifs and sequence on la même taille
-    LEN_MOTIF = len(motifs_[0])
-    NB_MOTIFS = len(motifs_)
+    NB_MOTIFS = f"{len(motifs_):->9,}".replace(",", " ")
 
     def _trsf_botte_pos_in_ts(botte_position):
         """
@@ -331,7 +332,6 @@ def motifs_matches_inone(
     #     return "\t"  * int(num)
     # on récupère la chaine de caractère dans l'objet
     _procession = procession_.values[0]
-    LEN_SEQ = len(_procession)
 
     # on construit un dictionnaire avec
     # check https://docs.python.org/3/library/os.html#os.cpu_count
@@ -341,7 +341,8 @@ def motifs_matches_inone(
     with Pool() as pool:
         D = {}
         for i, mot in enumerate(motifs_):
-            print(f"matchP-{i:->6}\t sur {NB_MOTIFS}", end="\r")
+            matchP_name = f"matchP-{i:->8,}".replace(",", " ")
+            print(f"{matchP_name}\t sur {NB_MOTIFS}", end="\r")
 
             kwargs = {
                 "mot": mot,
@@ -354,6 +355,9 @@ def motifs_matches_inone(
 
     # on consitue une df avec le dictionnaire.
     # celle ci aura un multi-index
+
+    LEN_MOTIF = len(motifs_[0])
+    LEN_SEQ = len(_procession)
 
     _df = DataFrame(Series(D))
     _df.columns = ["mot_pos"]
@@ -437,8 +441,8 @@ def motifs_matches_inall(processions_, mots_: Sequence, with_detail=False) -> Da
     _df = DataFrame(None)
     # with Pool() as pool:
     for i in range(len(processions_)):
-        name = f"processions{i:->4}"
-        print(f"Starting Process {name:>22} sur {len(processions_)}")
+        name = f"processions-{i:->4}"
+        print(f"Starting {name} sur {len(processions_)}")
         kwargs = {
             "name": name,
             "procession_": processions_.iloc[i],
