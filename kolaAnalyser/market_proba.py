@@ -2,6 +2,10 @@
 """Functions to computer market probabilities or frequences"""
 from typing import List, Dict
 from pandas import DataFrame, Series, concat
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def ordonne_motifs(df_: DataFrame, motifs: Dict) -> DataFrame:
@@ -34,11 +38,19 @@ def freq_last_lettre_sachant_mots(df_: DataFrame, motifs) -> Series:
     du mot connaissant les 1ère lettres
     """
     LEN_MOT = len(df_.index[0])
+    NB_MOTS = len(motifs[LEN_MOT])
     D = {}
     for i, (mot_nm1, last_letter) in enumerate(
         [(mot[:-1], mot[-1]) for mot in motifs[LEN_MOT]]
     ):
-        print(f"{i+1}/{len(motifs[LEN_MOT])}", end="\r")
+        if i % max(int(NB_MOTS / 50), 1) == 0:
+            # display only 50
+            ith = f"{i+1:->7,}".replace(",", " ")
+            len_mot = f"{NB_MOTS:->7,}".replace(",", " ")
+            logger.info(
+                f"Computing {ith}th conditional frequency out of {len_mot}"
+            )
+
         D[(*mot_nm1, last_letter)] = freq_l_sachant_mot(df_, last_letter, mot_nm1)
 
     return Series(D, name="freq_ll_s_mot").fillna(0).sort_values()

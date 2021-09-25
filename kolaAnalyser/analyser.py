@@ -44,7 +44,7 @@ from mlkHelper.timeUtils import (
 from kolaAnalyser.market_proba import ordonne_motifs
 
 # logger = log_to_stderr()  # logging.getLogger("INFO")  #log_to_stderr()
-logger = logging.getLogger("INFO")
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
@@ -312,9 +312,6 @@ def motifs_matches_inone(
     START_TS, SEQ_NUM = procession_.name
     PAS_TD = Timedelta(get_td_shift_from_index_name(procession_))
 
-    # tout les motifs and sequence on la même taille
-    NB_MOTIFS = f"{len(motifs_):->9,}".replace(",", " ")
-
     def _trsf_botte_pos_in_ts(botte_position):
         """
         transform a botte_position in a timestamp
@@ -338,11 +335,16 @@ def motifs_matches_inone(
     nb_processors = len(os.sched_getaffinity(0))
     logger.info(f"{name} hoping with {nb_processors} Thread / Node")
 
+    # tout les motifs and sequence on la même taille
+    NB_MOTIFS = f"{len(motifs_):->9,}".replace(",", " ")
+
     with Pool() as pool:
         D = {}
         for i, mot in enumerate(motifs_):
             matchP_name = f"matchP-{i:->8,}".replace(",", " ")
-            print(f"{matchP_name}\t sur {NB_MOTIFS}", end="\r")
+            if i % max(int(len(motifs_) / 50), 1) == 0:
+                # printing only 50 of those
+                logger.info(f"{matchP_name} sur {NB_MOTIFS}")
 
             kwargs = {
                 "mot": mot,
@@ -578,8 +580,8 @@ def main(
 
         logger.info(f"Sorting and computing conditional proba {len_mot:>9}.")
         sorted_data = ordonne_motifs(motifs_matches, MOTIFS)
-        bname = f"motifs_{sorted_data.columns.name}_mot{len_mot}"
 
+        bname = f"motifs_{sorted_data.columns.name}_mot{len_mot}"
         fname_csv = folder.joinpath(f"{bname}.csv")
 
         with open(fname_csv, "w") as f:
